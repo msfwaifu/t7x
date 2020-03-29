@@ -54,16 +54,16 @@ public:
 		bind_.type = BIND_TYPE_POINTER;
 	}
 
-	static void readBinds(std::vector<macho::bind>& bind, const uint8_t* p, const uint8_t* end, bool is_weak)
+	static void read_binds(std::vector<macho::bind>& bind, const uint8_t* p, const uint8_t* end, bool is_weak)
 	{
 		bind_parser parser(bind, is_weak);
 		while (p < end)
 		{
-			parser.readBindOp(p);
+			parser.read_bind_op(p);
 		}
 	}
 
-	void readBindOp(const uint8_t*& p)
+	void read_bind_op(const uint8_t*& p)
 	{
 		const uint8_t op = *p & BIND_OPCODE_MASK;
 		const uint8_t imm = *p & BIND_IMMEDIATE_MASK;
@@ -284,19 +284,19 @@ std::vector<macho::bind> macho::get_binds() const
 	{
 		const uint8_t* p = this->get_rva<uint8_t>(dyld_info->bind_off);
 		const uint8_t* end = p + dyld_info->bind_size;
-		bind_parser::readBinds(binds, p, end, false);
+		bind_parser::read_binds(binds, p, end, false);
 	}
 
 	{
 		const uint8_t* p = this->get_rva<uint8_t>(dyld_info->lazy_bind_off);
 		const uint8_t* end = p + dyld_info->lazy_bind_size;
-		bind_parser::readBinds(binds, p, end, false);
+		bind_parser::read_binds(binds, p, end, false);
 	}
 
 	{
 		const uint8_t* p = this->get_rva<uint8_t>(dyld_info->weak_bind_off);
 		const uint8_t* end = p + dyld_info->weak_bind_size;
-		bind_parser::readBinds(binds, p, end, true);
+		bind_parser::read_binds(binds, p, end, true);
 	}
 
 	return binds;

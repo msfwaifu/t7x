@@ -7,7 +7,7 @@ class macho_loader
 public:
 	using resolver = std::function<void*(const std::string& module, const std::string & function)>;
 
-	macho_loader(const std::string& file, const resolver& import_resolver = {});
+	macho_loader(const std::string& file, resolver import_resolver = {});
 
 	const macho& get_mapped_binary() const;
 

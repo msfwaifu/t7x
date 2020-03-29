@@ -1,10 +1,10 @@
 #include <std_include.hpp>
+#include <utility>
 #include "utils/io.hpp"
 #include "macho_loader.hpp"
-#include "utils/hook.hpp"
 
-macho_loader::macho_loader(const std::string& file, const resolver& import_resolver)
-	: import_resolver_(import_resolver)
+macho_loader::macho_loader(const std::string& file, resolver import_resolver)
+	: import_resolver_(std::move(import_resolver))
 {
 	if (!utils::io::read_file(file, &this->binary_data_))
 	{
