@@ -34,7 +34,7 @@ char* realpath(const char* path, char* resolved_path)
 
 #pragma endregion
 
-void* wrap(void* func)
+void* create_calling_convention_wrapper(void* func)
 {
 	return utils::hook::assemble([func](utils::hook::assembler& a)
 	{
@@ -63,28 +63,45 @@ void* wrap(void* func)
 	});
 }
 
+void wrap_calling_convention(std::unordered_map<std::string, void*>& symbols)
+{
+	auto copy = symbols;
+	symbols.clear();
+
+	for(auto i = copy.begin(); i != copy.end(); ++i)
+	{
+		symbols[i->first] = create_calling_convention_wrapper(i->second);
+	}
+}
+
 std::unordered_map<std::string, void*> build_symbol_map()
 {
 	std::unordered_map<std::string, void*> symbols;
 
+	// Symbols that need calling convention wrapping
+
+	symbols["__Znwm"] = malloc;
+	symbols["__Znam"] = malloc;
+	symbols["__ZdlPv"] = free;
+	symbols["__ZdaPv"] = free;
+
+	symbols["__NSGetExecutablePath"] = NSGetExecutablePath;
+
+	symbols["_strlen"] = strlen;
+	symbols["_memcpy"] = memcpy;
+
+	symbols["___cxa_guard_acquire"] = onesub;
+	symbols["___cxa_guard_release"] = onesub;
+
+	symbols["_dlsym"] = dlsym;
+	symbols["realpath"] = realpath;
+
+	wrap_calling_convention(symbols);
+
+	// Symbols without calling convention wrapping
+
 	static uint64_t guard = 0x1337;
 	symbols["___stack_chk_guard"] = &guard;
-
-	symbols["__Znwm"] = wrap(malloc);
-	symbols["__Znam"] = wrap(malloc);
-	symbols["__ZdlPv"] = wrap(free);
-	symbols["__ZdaPv"] = wrap(free);
-
-	symbols["__NSGetExecutablePath"] = wrap(NSGetExecutablePath);
-
-	symbols["_strlen"] = wrap(strlen);
-	symbols["_memcpy"] = wrap(memcpy);
-
-	symbols["___cxa_guard_acquire"] = wrap(onesub);
-	symbols["___cxa_guard_release"] = wrap(onesub);
-
-	symbols["_dlsym"] = wrap(dlsym);
-	symbols["realpath"] = wrap(realpath);
 
 	return symbols;
 }
@@ -115,8 +132,7 @@ int __stdcall WinMain(HINSTANCE, HINSTANCE, PSTR, int)
 
 	macho_loader loader("./CoDBlkOps3_Exe", resolve_symbol);
 
-	const auto constructors = loader.get_mapped_binary().get_constructors();
-	for(const auto& constructor : constructors)
+	for (const auto& constructor : loader.get_mapped_binary().get_constructors())
 	{
 		constructor();
 	}
@@ -137,6 +153,11 @@ int __stdcall WinMain(HINSTANCE, HINSTANCE, PSTR, int)
 	});
 
 	static_cast<void(*)()>(entry_point)();
+
+	for (const auto& destructor : loader.get_mapped_binary().get_destructors())
+	{
+		destructor();
+	}
 
 	return 0;
 }
