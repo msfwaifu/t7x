@@ -68,9 +68,19 @@ void wrap_calling_convention(std::unordered_map<std::string, void*>& symbols)
 	auto copy = symbols;
 	symbols.clear();
 
-	for(auto i = copy.begin(); i != copy.end(); ++i)
+	std::unordered_map<void*, void*> function_mapping;
+
+	for (auto i = copy.begin(); i != copy.end(); ++i)
 	{
-		symbols[i->first] = create_calling_convention_wrapper(i->second);
+		if (function_mapping.find(i->second) == function_mapping.end())
+		{
+			function_mapping[i->second] = create_calling_convention_wrapper(i->second);
+		}
+	}
+
+	for (auto i = copy.begin(); i != copy.end(); ++i)
+	{
+		symbols[i->first] = function_mapping[i->second];
 	}
 }
 
