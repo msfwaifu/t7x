@@ -1,8 +1,10 @@
 #include <std_include.hpp>
 #include "utils/io.hpp"
 #include "macho_loader.hpp"
+#include "utils/hook.hpp"
 
-macho_loader::macho_loader(const std::string& file)
+macho_loader::macho_loader(const std::string& file, const resolver& import_resolver)
+	: import_resolver_(import_resolver)
 {
 	if (!utils::io::read_file(file, &this->binary_data_))
 	{
@@ -11,6 +13,11 @@ macho_loader::macho_loader(const std::string& file)
 
 	this->binary_ = macho(this->binary_data_.data());
 	this->map_binary();
+}
+
+const macho& macho_loader::get_mapped_binary() const
+{
+	return this->mapped_binary_;
 }
 
 void macho_loader::allocate_segments()
@@ -82,6 +89,7 @@ void macho_loader::map_imports() const
 	struct import
 	{
 		std::string name;
+		macho::bind bind;
 	};
 
 	struct import_lib
@@ -98,6 +106,11 @@ void macho_loader::map_imports() const
 
 	std::vector<import_lib> import_list;
 
+	{
+		import_lib lib{nullptr, "<self>"};
+		import_list.push_back(std::move(lib));
+	}
+
 	const auto imports = this->binary_.get_load_commands<dylib_command>({LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB});
 	for (const auto& lib : imports)
 	{
@@ -110,13 +123,14 @@ void macho_loader::map_imports() const
 	{
 		import i;
 		i.name = bind.name;
+		i.bind = bind;
 
-		if (bind.ordinal == 0)
+		/*if (bind.ordinal == 0) // self
 		{
 			continue;
-		}
+		}*/
 
-		auto& i_list = import_list[bind.ordinal - 1].imports;
+		auto& i_list = import_list[bind.ordinal /*- 1*/].imports;
 
 		if (std::find_if(i_list.begin(), i_list.end(), [&bind](const import& i)
 		{
@@ -127,13 +141,26 @@ void macho_loader::map_imports() const
 		}
 	}
 
+	const auto segments = this->binary_.get_load_commands<segment_command_64>({LC_SEGMENT_64});
+
 	for (const auto& i : import_list)
 	{
-		printf("Importing symbols from: %s\n", i.name.data());
+		//printf("Importing symbols from: %s\n", i.name.data());
 
 		for (const auto& symbol : i.imports)
 		{
-			printf("\t\t%s\n", symbol.name.data());
+			const auto address = segments[symbol.bind.seg_index]->vmaddr + symbol.bind.seg_offset;
+
+			//printf("\t\t0x%llX: %s\n", address, symbol.name.data());
+
+			if(this->import_resolver_)
+			{
+				const auto pointer = this->import_resolver_(i.name, symbol.name);
+				if(pointer)
+				{
+					*reinterpret_cast<void**>(address) = pointer;
+				}
+			}
 		}
 	}
 }

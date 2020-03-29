@@ -1,5 +1,106 @@
 #include <std_include.hpp>
 #include "macho_loader.hpp"
+#include "utils/hook.hpp"
+
+#pragma region runtime
+
+int NSGetExecutablePath(char* buf, uint32_t* bufsize)
+{
+	*bufsize = GetModuleFileNameA(GetModuleHandleA(nullptr), buf, *bufsize);
+	return *bufsize == 0;
+}
+
+int onesub()
+{
+	return 1;
+}
+
+int nullsub()
+{
+	return 0;
+}
+
+void* resolve_symbol(const std::string& module, const std::string& function);
+
+void* dlsym(void* handle, const char* name)
+{
+	return resolve_symbol({}, name);
+}
+
+char* realpath(const char* path, char* resolved_path)
+{
+	return _fullpath(resolved_path, path, 0x7FFFFFFF);
+}
+
+#pragma endregion
+
+void* wrap(void* func)
+{
+	return utils::hook::assemble([func](utils::hook::assembler& a)
+	{
+		a.push(rax);
+		a.pushad64();
+
+		a.push(rdi);
+		a.push(rsi);
+		a.push(rdx);
+		a.push(rcx);
+
+		// More than 4 arguments not supported yet
+
+		a.pop(r9);
+		a.pop(r8);
+		a.pop(rdx);
+		a.pop(rcx);
+
+		a.call(func);
+
+		a.mov(ptr(rsp, 0x80, 8), rax);
+
+		a.popad64();
+		a.pop(rax);
+		a.ret();
+	});
+}
+
+std::unordered_map<std::string, void*> build_symbol_map()
+{
+	std::unordered_map<std::string, void*> symbols;
+
+	static uint64_t guard = 0x1337;
+	symbols["___stack_chk_guard"] = &guard;
+
+	symbols["__Znwm"] = wrap(malloc);
+	symbols["__Znam"] = wrap(malloc);
+	symbols["__ZdlPv"] = wrap(free);
+	symbols["__ZdaPv"] = wrap(free);
+
+	symbols["__NSGetExecutablePath"] = wrap(NSGetExecutablePath);
+
+	symbols["_strlen"] = wrap(strlen);
+	symbols["_memcpy"] = wrap(memcpy);
+
+	symbols["___cxa_guard_acquire"] = wrap(onesub);
+	symbols["___cxa_guard_release"] = wrap(onesub);
+
+	symbols["_dlsym"] = wrap(dlsym);
+	symbols["realpath"] = wrap(realpath);
+
+	return symbols;
+}
+
+void* resolve_symbol(const std::string& module, const std::string& function)
+{
+	static const auto symbol_map = build_symbol_map();
+
+	const auto symbol = symbol_map.find(function);
+	if (symbol != symbol_map.end())
+	{
+		return symbol->second;
+	}
+
+	return nullptr;
+}
 
 int __stdcall WinMain(HINSTANCE, HINSTANCE, PSTR, int)
 {
@@ -12,6 +113,30 @@ int __stdcall WinMain(HINSTANCE, HINSTANCE, PSTR, int)
 	freopen("CONOUT$", "w", stderr);
 #endif
 
-	macho_loader loader("./CoDBlkOps3_Exe");
+	macho_loader loader("./CoDBlkOps3_Exe", resolve_symbol);
+
+	const auto constructors = loader.get_mapped_binary().get_constructors();
+	for(const auto& constructor : constructors)
+	{
+		constructor();
+	}
+
+	const auto entry_point = utils::hook::assemble([&loader](utils::hook::assembler& a)
+	{
+		a.sub(rsp, 8);
+		a.pushad64();
+
+		a.xor_(rdi, rdi);
+		a.xor_(rsi, rsi);
+
+		a.call(loader.get_mapped_binary().get_entry_point());
+
+		a.popad64();
+		a.add(rsp, 8);
+		a.ret();
+	});
+
+	static_cast<void(*)()>(entry_point)();
+
 	return 0;
 }

@@ -207,6 +207,74 @@ std::vector<load_command*> macho::get_load_commands() const
 	return commands;
 }
 
+std::vector<section_64*> macho::get_sections() const
+{
+	std::vector<section_64*> sections;
+
+	const auto segments = this->get_load_commands<segment_command_64>({LC_SEGMENT_64});
+
+	for (const auto& segment : segments)
+	{
+		const auto section_headers = reinterpret_cast<section_64*>(reinterpret_cast<uint8_t*>(segment) + sizeof(
+			segment_command_64));
+
+		for (uint32_t i = 0; i < segment->nsects; ++i)
+		{
+			sections.push_back(&section_headers[i]);
+		}
+	}
+
+	return sections;
+}
+
+section_64* macho::get_section(const std::string& name) const
+{
+	auto sections = this->get_sections();
+	for (auto& section : sections)
+	{
+		if (section->sectname == name)
+		{
+			return section;
+		}
+	}
+
+	return {};
+}
+
+std::vector<void(*)()> macho::get_constructors() const
+{
+	std::vector<void(*)()> result;
+	const auto section = this->get_section("__mod_init_func");
+	if (!section) return result;
+
+	const auto size = section->size / sizeof(void*);
+	auto* functions = reinterpret_cast<void(**)()>(section->addr);
+
+	for (size_t i = 0; i < size; ++i)
+	{
+		result.push_back(functions[i]);
+	}
+
+	return result;
+}
+
+std::vector<void(*)()> macho::get_destructors() const
+{
+	std::vector<void(*)()> result;
+	const auto section = this->get_section("__mod_term_func");
+	if (!section) return result;
+
+	const auto size = section->size / sizeof(void*);
+	auto* functions = reinterpret_cast<void(**)()>(section->addr);
+
+	for (size_t i = 0; i < size; ++i)
+	{
+		result.push_back(functions[i]);
+	}
+
+	return result;
+}
+
 std::vector<macho::bind> macho::get_binds() const
 {
 	std::vector<bind> binds;

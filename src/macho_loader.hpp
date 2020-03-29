@@ -5,7 +5,11 @@
 class macho_loader
 {
 public:
-	macho_loader(const std::string& file);
+	using resolver = std::function<void*(const std::string& module, const std::string & function)>;
+
+	macho_loader(const std::string& file, const resolver& import_resolver = {});
+
+	const macho& get_mapped_binary() const;
 
 private:
 	void allocate_segments();
@@ -16,4 +20,6 @@ private:
 	std::string binary_data_;
 	macho binary_;
 	macho mapped_binary_;
+
+	resolver import_resolver_;
 };

@@ -34,6 +34,12 @@ public:
 	mach_header_64* get_mach_header() const;
 	std::vector<load_command*> get_load_commands() const;
 
+	std::vector<section_64*> get_sections() const;
+	section_64* get_section(const std::string& name) const;
+
+	std::vector<void(*)()> get_constructors() const;
+	std::vector<void(*)()> get_destructors() const;
+
 	std::vector<bind> get_binds() const;
 
 	template <typename T>
