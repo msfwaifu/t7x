@@ -32,6 +32,17 @@ char* realpath(const char* path, char* resolved_path)
 	return _fullpath(resolved_path, path, 0x7FFFFFFF);
 }
 
+std::vector<std::function<void()>> exit_handlers;
+
+int cxa_atexit(void (*func) (void *), void * arg, void * dso_handle)
+{
+	exit_handlers.emplace_back([arg, func]() {
+		func(arg);
+	});
+	
+	return 0;
+}
+
 #pragma endregion
 
 void* create_calling_convention_wrapper(void* func)
@@ -105,6 +116,7 @@ std::unordered_map<std::string, void*> build_symbol_map()
 
 	symbols["_dlsym"] = dlsym;
 	symbols["realpath"] = realpath;
+	symbols["___cxa_atexit"] = cxa_atexit;
 
 	wrap_calling_convention(symbols);
 
@@ -163,6 +175,11 @@ int __stdcall WinMain(HINSTANCE, HINSTANCE, PSTR, int)
 	});
 
 	static_cast<void(*)()>(entry_point)();
+
+	for (const auto& exit_handler : exit_handlers)
+	{
+		exit_handler();
+	}
 
 	for (const auto& destructor : loader.get_mapped_binary().get_destructors())
 	{
